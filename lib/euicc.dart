@@ -1,7 +1,18 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-/// Opens Android eSIM setup. Returns null on success, or a message to show.
+import 'esim.dart';
+
+/// Opens the platform eSIM setup link. Returns null on success, or a message.
 typedef EsimInstaller = Future<String?> Function(String setupLink);
+
+/// Apple link on iOS, Android link everywhere else.
+String? esimSetupLink({String? lpa, String? matchingId}) {
+  if (defaultTargetPlatform == TargetPlatform.iOS) {
+    return appleSetupLink(lpa: lpa, matchingId: matchingId);
+  }
+  return androidSetupLink(lpa: lpa, matchingId: matchingId);
+}
 
 const _channel = MethodChannel('net.roamkit.mobile/euicc');
 

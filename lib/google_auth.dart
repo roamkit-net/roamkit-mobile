@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import 'catalog.dart';
@@ -10,6 +11,11 @@ const _productionServerClientId =
     '1077069744172-2fggulf6olc93i102e2d6gfok808u3t7.apps.googleusercontent.com';
 const _stagingServerClientId =
     '1077069744172-tdjo47kd9r7u5vkecldr53vctecdmnue.apps.googleusercontent.com';
+
+/// iOS OAuth client for bundle id net.roamkit.mobile. Public; the reversed
+/// form is the URL scheme in Info.plist.
+const _iosClientId =
+    '1077069744172-3ale2e53jt0jm52g1atf4ufrh1vu3vms.apps.googleusercontent.com';
 
 const _serverClientOverride = String.fromEnvironment(
   'ROAMKIT_GOOGLE_SERVER_CLIENT_ID',
@@ -113,6 +119,7 @@ bool _googleReady = false;
 Future<GoogleAccountCredential?> readGoogleAccountFromDevice() async {
   if (!_googleReady) {
     await GoogleSignIn.instance.initialize(
+      clientId: Platform.isIOS ? _iosClientId : null,
       serverClientId: googleServerClientId,
     );
     _googleReady = true;
@@ -139,6 +146,8 @@ Future<GoogleAccountCredential?> readGoogleAccountFromDevice() async {
       throw SignupFailure(googleSignInUnavailableMessage);
     }
     throw SignupFailure(googleSignInFailedMessage);
+  } on PlatformException {
+    throw SignupFailure(googleSignInUnavailableMessage);
   }
 }
 

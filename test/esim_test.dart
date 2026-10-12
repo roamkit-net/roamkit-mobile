@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:roamkit_mobile/esim.dart';
@@ -30,6 +31,20 @@ void main() {
     expect(androidSetupLink(lpa: 'smdp.example', matchingId: 'CODE'), link);
     expect(androidSetupLink(lpa: r'LPA:1$smdp.example$CODE'), link);
     expect(androidSetupLink(lpa: '', matchingId: ''), isNull);
+  });
+
+  test('Apple setup link matches the carddata form', () {
+    const link =
+        'https://esimsetup.apple.com/esim_qrcode_provisioning?carddata=LPA%3A1%24smdp.example%24CODE';
+    expect(appleSetupLink(lpa: 'smdp.example', matchingId: 'CODE'), link);
+    expect(appleSetupLink(lpa: r'LPA:1$smdp.example$CODE'), link);
+    expect(
+      appleSetupLink(
+        lpa: r'LPA:1$consumer.e-sim.global$TN202606052058468D8811A3',
+      ),
+      'https://esimsetup.apple.com/esim_qrcode_provisioning?carddata=LPA%3A1%24consumer.e-sim.global%24TN202606052058468D8811A3',
+    );
+    expect(appleSetupLink(lpa: '', matchingId: ''), isNull);
   });
 
   testWidgets('logged-out My eSIMs asks for Log in', (tester) async {
@@ -96,45 +111,82 @@ void main() {
   });
 
   testWidgets('Install eSIM opens the Android setup link', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
     final seen = <String>[];
-    await tester.pumpWidget(
-      MaterialApp(
-        home: EsimSetupScreen(
-          esim: _esim(
-            id: 2,
-            title: 'Croatia',
-            status: 'installation_started',
-            lpa: 'smdp.example',
-            matchingId: 'CODE',
-            iccid: '8910300000060613949',
+    try {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EsimSetupScreen(
+            esim: _esim(
+              id: 2,
+              title: 'Croatia',
+              status: 'installation_started',
+              lpa: 'smdp.example',
+              matchingId: 'CODE',
+              iccid: '8910300000060613949',
+            ),
+            installer: (code) async {
+              seen.add(code);
+              return null;
+            },
           ),
-          installer: (code) async {
-            seen.add(code);
-            return null;
-          },
         ),
-      ),
-    );
+      );
 
-    expect(find.text('Set up your eSIM'), findsOneWidget);
-    expect(find.text('ICCID: 8910300000060613949'), findsOneWidget);
-    expect(find.text('Manual install'), findsOneWidget);
-    expect(find.text('QR code'), findsOneWidget);
-    expect(
-      find.text('Data Roaming must be turned on for the service to work.'),
-      findsOneWidget,
-    );
-    expect(find.text('smdp.example'), findsNothing);
-    expect(find.text('CODE'), findsNothing);
+      expect(find.text('Set up your eSIM'), findsOneWidget);
+      expect(find.text('ICCID: 8910300000060613949'), findsOneWidget);
+      expect(find.text('Manual install'), findsOneWidget);
+      expect(find.text('QR code'), findsOneWidget);
+      expect(
+        find.text('Data Roaming must be turned on for the service to work.'),
+        findsOneWidget,
+      );
+      expect(find.text('smdp.example'), findsNothing);
+      expect(find.text('CODE'), findsNothing);
 
-    await tester.tap(find.text('Install eSIM'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Install eSIM'));
+      await tester.pumpAndSettle();
 
-    expect(seen, [
-      'https://esimsetup.android.com/esim_qrcode_provisioning?carddata=LPA%3A1%24smdp.example%24CODE',
-    ]);
-    expect(find.text('Install eSIM'), findsOneWidget);
-    expect(find.text('Manual install'), findsOneWidget);
+      expect(seen, [
+        'https://esimsetup.android.com/esim_qrcode_provisioning?carddata=LPA%3A1%24smdp.example%24CODE',
+      ]);
+      expect(find.text('Install eSIM'), findsOneWidget);
+      expect(find.text('Manual install'), findsOneWidget);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('Install eSIM opens the Apple setup link on iOS', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    final seen = <String>[];
+    try {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EsimSetupScreen(
+            esim: _esim(
+              id: 2,
+              title: 'Croatia',
+              status: 'installation_started',
+              lpa: r'LPA:1$consumer.e-sim.global$TN202606052058468D8811A3',
+            ),
+            installer: (code) async {
+              seen.add(code);
+              return null;
+            },
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Install eSIM'));
+      await tester.pumpAndSettle();
+
+      expect(seen, [
+        'https://esimsetup.apple.com/esim_qrcode_provisioning?carddata=LPA%3A1%24consumer.e-sim.global%24TN202606052058468D8811A3',
+      ]);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
   });
 
   testWidgets('Manual install copies the activation code without a QR', (

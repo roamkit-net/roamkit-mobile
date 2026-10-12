@@ -68,7 +68,7 @@ class _EsimSetupScreenState extends State<EsimSetupScreen> {
   }
 
   Future<void> _install() async {
-    final link = androidSetupLink(
+    final link = esimSetupLink(
       lpa: widget.esim.lpa,
       matchingId: widget.esim.matchingId,
     );

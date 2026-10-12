@@ -223,7 +223,7 @@ class _EsimDetailScreenState extends State<EsimDetailScreen> {
   }
 
   Future<void> _install() async {
-    final link = androidSetupLink(
+    final link = esimSetupLink(
       lpa: widget.esim.lpa,
       matchingId: widget.esim.matchingId,
     );
@@ -298,7 +298,7 @@ class _EsimDetailScreenState extends State<EsimDetailScreen> {
   Widget build(BuildContext context) {
     final esim = widget.esim;
     final canInstall =
-        androidSetupLink(lpa: esim.lpa, matchingId: esim.matchingId) != null;
+        esimSetupLink(lpa: esim.lpa, matchingId: esim.matchingId) != null;
     final showPackages =
         _stage != EsimStage.purchased ||
         _packages.isNotEmpty ||

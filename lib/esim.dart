@@ -303,10 +303,27 @@ String? androidActivationCode({String? lpa, String? matchingId}) {
 
 /// Google universal link that opens Android eSIM setup with the code filled in.
 String? androidSetupLink({String? lpa, String? matchingId}) {
+  return _setupLink(
+    host: 'esimsetup.android.com',
+    lpa: lpa,
+    matchingId: matchingId,
+  );
+}
+
+/// Apple universal link that opens iOS eSIM setup with the code filled in.
+String? appleSetupLink({String? lpa, String? matchingId}) {
+  return _setupLink(
+    host: 'esimsetup.apple.com',
+    lpa: lpa,
+    matchingId: matchingId,
+  );
+}
+
+String? _setupLink({required String host, String? lpa, String? matchingId}) {
   final code = androidActivationCode(lpa: lpa, matchingId: matchingId);
   if (code == null || code.isEmpty) {
     return null;
   }
   final carddata = Uri.encodeComponent('LPA:$code');
-  return 'https://esimsetup.android.com/esim_qrcode_provisioning?carddata=$carddata';
+  return 'https://$host/esim_qrcode_provisioning?carddata=$carddata';
 }
