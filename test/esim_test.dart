@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:roamkit_mobile/esim.dart';
+import 'package:roamkit_mobile/esim_detail_api.dart';
 import 'package:roamkit_mobile/esim_setup_screen.dart';
 import 'package:roamkit_mobile/esims_screen.dart';
 import 'package:roamkit_mobile/session.dart';
@@ -23,6 +24,12 @@ void main() {
       androidActivationCode(lpa: 'smdp.example', matchingId: 'CODE'),
       r'1$smdp.example$CODE',
     );
+  });
+
+  test('Europe and Discover Global use catalog region icons', () {
+    expect(regionIconSlug('Europe'), 'europe');
+    expect(regionIconSlug('Discover Global'), 'global');
+    expect(regionIconSlug('Croatia'), isNull);
   });
 
   test('Android setup link matches the web carddata form', () {
@@ -71,6 +78,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: EsimsScreen(
+          packageLoader: (_) async => [],
           loader: () async => [
             _esim(
               id: 1,
@@ -108,6 +116,131 @@ void main() {
     expect(find.text('Note: Japan trip'), findsOneWidget);
     expect(find.text('Note: '), findsNWidgets(2));
     expect(find.text('Expired (0)'), findsNothing);
+  });
+
+  testWidgets('Discover Global shows the catalog image', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'roamkit_access_token': 'access',
+      'roamkit_refresh_token': 'refresh',
+      'roamkit_display_name': 'Ante',
+    });
+    await AppSession.instance.restore(refreshBalance: false);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: EsimsScreen(
+          packageLoader: (_) async => [],
+          loader: () async => [
+            _esim(
+              id: 8,
+              title: 'Discover Global',
+              status: 'in_use',
+              countryCode: '',
+            ),
+          ],
+          regionImage: (slug) async =>
+              slug == 'global' ? 'https://example.com/global.png' : null,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Image &&
+            widget.image is NetworkImage &&
+            (widget.image as NetworkImage).url ==
+                'https://example.com/global.png',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('main card uses the latest active package expiry badge', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'roamkit_access_token': 'access',
+      'roamkit_refresh_token': 'refresh',
+      'roamkit_display_name': 'Ante',
+    });
+    await AppSession.instance.restore(refreshBalance: false);
+    final now = DateTime.now().toUtc();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: EsimsScreen(
+          loader: () async => [_esim(id: 9, title: 'Europe', status: 'in_use')],
+          packageLoader: (_) async => [
+            _package(expiresAt: now.add(const Duration(hours: 36))),
+            _package(expiresAt: now.add(const Duration(hours: 216))),
+            _package(
+              status: 'expired',
+              expiresAt: now.add(const Duration(days: 30)),
+            ),
+          ],
+          regionImage: (_) async => null,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('9 days'), findsOneWidget);
+    expect(find.text('7 days'), findsNothing);
+  });
+
+  testWidgets('search filters all sections by ICCID and Note', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'roamkit_access_token': 'access',
+      'roamkit_refresh_token': 'refresh',
+      'roamkit_display_name': 'Ante',
+    });
+    await AppSession.instance.restore(refreshBalance: false);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: EsimsScreen(
+          loader: () async => [
+            _esim(
+              id: 10,
+              title: 'Croatia',
+              status: 'in_use',
+              iccid: '8910300000000000010',
+              note: 'Summer',
+            ),
+            _esim(
+              id: 11,
+              title: 'Germany',
+              status: 'expired',
+              archivedAt: '2026-10-09T00:00:00Z',
+              iccid: '8910300000000000011',
+              note: 'Work Trip',
+            ),
+          ],
+          packageLoader: (_) async => [],
+          regionImage: (_) async => null,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), '000010');
+    await tester.pump();
+    expect(find.textContaining('Croatia'), findsOneWidget);
+    expect(find.textContaining('Germany'), findsNothing);
+    expect(find.text('Active (1)'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'work trip');
+    await tester.pump();
+    expect(find.textContaining('Croatia'), findsNothing);
+    expect(find.textContaining('Germany'), findsOneWidget);
+    expect(find.text('Archived (1)'), findsOneWidget);
+    expect(find.text('Active (1)'), findsNothing);
+
+    await tester.enterText(find.byType(TextField), 'missing');
+    await tester.pump();
+    expect(find.text('No matching eSIMs.'), findsOneWidget);
   });
 
   testWidgets('Install eSIM opens the Android setup link', (tester) async {
@@ -262,6 +395,25 @@ void main() {
   });
 }
 
+AppliedPackage _package({
+  String status = 'active',
+  required DateTime expiresAt,
+}) {
+  return AppliedPackage(
+    id: expiresAt.toIso8601String(),
+    kind: 'esim',
+    status: status,
+    dataAllowance: '300 MB',
+    validityDays: 7,
+    isUnlimited: false,
+    createdAt: null,
+    activatedAt: null,
+    expiresAt: expiresAt.toIso8601String(),
+    paidUsd: null,
+    currency: 'USD',
+  );
+}
+
 OwnedEsim _esim({
   required int id,
   required String title,
@@ -273,13 +425,14 @@ OwnedEsim _esim({
   String qrcodeUrl = '',
   String iccid = '',
   String note = '',
+  String countryCode = 'HR',
 }) {
   return OwnedEsim(
     id: id,
     status: status,
     locationTitle: title,
     packageTitle: '',
-    countryCode: 'HR',
+    countryCode: countryCode,
     dataAllowance: '1 GB',
     validityDays: 7,
     usageRemainingMb: null,

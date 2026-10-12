@@ -49,6 +49,64 @@ class AppliedPackage {
   }
 }
 
+class PackageExpiryBadge {
+  const PackageExpiryBadge({
+    required this.label,
+    required this.urgent,
+    required this.expiresAt,
+  });
+
+  final String label;
+  final bool urgent;
+  final DateTime expiresAt;
+}
+
+/// Remaining whole days until an active package expires, rounded up.
+PackageExpiryBadge? packageExpiryBadge(
+  AppliedPackage package, {
+  DateTime? now,
+}) {
+  if (package.status != 'active') {
+    return null;
+  }
+  final raw = package.expiresAt?.trim() ?? '';
+  if (raw.isEmpty) {
+    return null;
+  }
+  final expires = DateTime.tryParse(raw)?.toUtc();
+  if (expires == null) {
+    return null;
+  }
+  final remaining = expires.difference((now ?? DateTime.now()).toUtc());
+  if (remaining <= Duration.zero) {
+    return null;
+  }
+  const day = Duration(hours: 24);
+  final days =
+      (remaining.inMicroseconds + day.inMicroseconds - 1) ~/ day.inMicroseconds;
+  return PackageExpiryBadge(
+    label: days == 1 ? '1 day' : '$days days',
+    urgent: days <= 3,
+    expiresAt: expires,
+  );
+}
+
+/// One card badge, based on the latest active package expiry.
+PackageExpiryBadge? latestPackageExpiryBadge(
+  Iterable<AppliedPackage> packages, {
+  DateTime? now,
+}) {
+  PackageExpiryBadge? latest;
+  for (final package in packages) {
+    final badge = packageExpiryBadge(package, now: now);
+    if (badge != null &&
+        (latest == null || badge.expiresAt.isAfter(latest.expiresAt))) {
+      latest = badge;
+    }
+  }
+  return latest;
+}
+
 class EsimUsage {
   const EsimUsage({
     required this.remainingMb,
