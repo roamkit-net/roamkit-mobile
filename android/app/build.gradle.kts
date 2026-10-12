@@ -1,7 +1,32 @@
+import java.io.File
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+val keystorePropertiesFile = rootProject.file("key.properties")
+val keystoreProperties = Properties()
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
+}
+
+fun resolveExistingFile(rawPath: String): File {
+    val direct = file(rawPath)
+    if (direct.exists()) {
+        return direct
+    }
+    val normalized = rawPath.replace('\\', '/')
+    val drive = Regex("""^([A-Za-z]):/(.*)$""").find(normalized)
+    if (drive != null) {
+        val translated = file("/mnt/${drive.groupValues[1].lowercase()}/${drive.groupValues[2]}")
+        if (translated.exists()) {
+            return translated
+        }
+    }
+    return direct
 }
 
 android {
@@ -25,11 +50,30 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (keystorePropertiesFile.exists()) {
+            val secrets = Properties()
+            val secretsRaw = keystoreProperties.getProperty("secretsFile")
+                ?: error("android/key.properties is missing secretsFile")
+            resolveExistingFile(secretsRaw).inputStream().use { secrets.load(it) }
+            create("release") {
+                keyAlias = secrets.getProperty("KEYSTORE_ALIAS")
+                keyPassword = secrets.getProperty("KEY_PASSWORD")
+                storePassword = secrets.getProperty("KEYSTORE_PASSWORD")
+                val storeRaw = keystoreProperties.getProperty("storeFile")
+                    ?: secrets.getProperty("KEYSTORE_PATH")
+                storeFile = resolveExistingFile(storeRaw)
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (keystorePropertiesFile.exists()) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }

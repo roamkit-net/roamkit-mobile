@@ -13,6 +13,17 @@ const _muted = Color(0xFF8E97A8);
 const _accent = Color(0xFF4C6FFF);
 const _remainingFill = Color(0xFFDCEBFF);
 
+/// One long-press action, or null when the card stays where it is.
+String? esimMoveAction(OwnedEsim esim) {
+  if (esim.archivedAt != null) {
+    return esim.status == 'expired' ? 'Move to Expired' : 'Move to Active';
+  }
+  if (esim.status == 'expired') {
+    return 'Move to Archived';
+  }
+  return null;
+}
+
 List<OwnedEsim> filterEsims(List<OwnedEsim> esims, String query) {
   final needle = query.trim().toLowerCase();
   if (needle.isEmpty) {
@@ -32,11 +43,13 @@ class EsimsScreen extends StatefulWidget {
     this.loader,
     this.regionImage,
     this.packageLoader,
+    this.archive,
   });
 
   final Future<List<OwnedEsim>> Function()? loader;
   final Future<String?> Function(String slug)? regionImage;
   final Future<List<AppliedPackage>> Function(int esimId)? packageLoader;
+  final Future<void> Function(int esimId, {required bool archive})? archive;
 
   @override
   State<EsimsScreen> createState() => _EsimsScreenState();
@@ -49,6 +62,7 @@ class _EsimsScreenState extends State<EsimsScreen> {
   final TextEditingController _search = TextEditingController();
   String _query = '';
   bool _loading = false;
+  bool _archivedOpen = false;
   String? _error;
 
   @override
@@ -82,6 +96,7 @@ class _EsimsScreenState extends State<EsimsScreen> {
         _expiryBadges = const {};
         _query = '';
         _search.clear();
+        _archivedOpen = false;
         _error = null;
         _loading = false;
       });
@@ -157,6 +172,50 @@ class _EsimsScreenState extends State<EsimsScreen> {
     });
   }
 
+  void _setQuery(String value) {
+    setState(() {
+      if (value.trim().isEmpty && _query.trim().isNotEmpty) {
+        _archivedOpen = false;
+      }
+      _query = value;
+    });
+  }
+
+  Future<void> _move(OwnedEsim esim) async {
+    final label = esimMoveAction(esim);
+    if (label == null) {
+      return;
+    }
+    final archive = esim.archivedAt == null;
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      builder: (context) {
+        return SafeArea(
+          child: ListTile(
+            title: Text(label),
+            onTap: () => Navigator.of(context).pop(true),
+          ),
+        );
+      },
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+    try {
+      final action = widget.archive ?? setEsimArchived;
+      await action(esim.id, archive: archive);
+      if (!mounted) {
+        return;
+      }
+      await _load();
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _error = 'Could not update this eSIM.');
+    }
+  }
+
   Future<void> _open(OwnedEsim esim) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -176,6 +235,7 @@ class _EsimsScreenState extends State<EsimsScreen> {
         final signedIn = AppSession.instance.isSignedIn;
         final filtered = filterEsims(_esims, _query);
         final sections = partitionEsims(filtered);
+        final archivedExpanded = _query.trim().isNotEmpty || _archivedOpen;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -194,7 +254,7 @@ class _EsimsScreenState extends State<EsimsScreen> {
                 color: Colors.transparent,
                 child: TextField(
                   controller: _search,
-                  onChanged: (value) => setState(() => _query = value),
+                  onChanged: _setQuery,
                   decoration: InputDecoration(
                     hintText: 'Search ICCID or Note',
                     prefixIcon: const Icon(Icons.search),
@@ -203,7 +263,7 @@ class _EsimsScreenState extends State<EsimsScreen> {
                         : IconButton(
                             onPressed: () {
                               _search.clear();
-                              setState(() => _query = '');
+                              _setQuery('');
                             },
                             icon: const Icon(Icons.close),
                           ),
@@ -257,6 +317,10 @@ class _EsimsScreenState extends State<EsimsScreen> {
                     )
                   : ListView(
                       children: [
+                        if (_error != null) ...[
+                          Text(_error!, style: const TextStyle(color: _ink)),
+                          const SizedBox(height: 8),
+                        ],
                         if (sections.active.isNotEmpty)
                           _Section(
                             title: 'Active (${sections.active.length})',
@@ -264,6 +328,7 @@ class _EsimsScreenState extends State<EsimsScreen> {
                             regionImages: _regionImages,
                             expiryBadges: _expiryBadges,
                             onOpen: _open,
+                            onLongPress: _move,
                           ),
                         if (sections.expired.isNotEmpty)
                           _Section(
@@ -272,6 +337,7 @@ class _EsimsScreenState extends State<EsimsScreen> {
                             regionImages: _regionImages,
                             expiryBadges: _expiryBadges,
                             onOpen: _open,
+                            onLongPress: _move,
                           ),
                         if (sections.archived.isNotEmpty)
                           _Section(
@@ -280,6 +346,10 @@ class _EsimsScreenState extends State<EsimsScreen> {
                             regionImages: _regionImages,
                             expiryBadges: _expiryBadges,
                             onOpen: _open,
+                            onLongPress: _move,
+                            expanded: archivedExpanded,
+                            onToggle: () =>
+                                setState(() => _archivedOpen = !_archivedOpen),
                           ),
                       ],
                     ),
@@ -298,6 +368,9 @@ class _Section extends StatelessWidget {
     required this.regionImages,
     required this.expiryBadges,
     required this.onOpen,
+    required this.onLongPress,
+    this.expanded = true,
+    this.onToggle,
   });
 
   final String title;
@@ -305,31 +378,57 @@ class _Section extends StatelessWidget {
   final Map<String, String> regionImages;
   final Map<int, PackageExpiryBadge> expiryBadges;
   final ValueChanged<OwnedEsim> onOpen;
+  final ValueChanged<OwnedEsim> onLongPress;
+  final bool expanded;
+  final VoidCallback? onToggle;
 
   @override
   Widget build(BuildContext context) {
+    final header = Text(
+      title,
+      style: const TextStyle(
+        color: _muted,
+        fontSize: 13,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 0.4,
+      ),
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          title,
-          style: const TextStyle(
-            color: _muted,
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.4,
+        if (onToggle == null)
+          header
+        else
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onToggle,
+              child: Row(
+                children: [
+                  header,
+                  Icon(
+                    expanded ? Icons.expand_less : Icons.expand_more,
+                    color: _muted,
+                    size: 18,
+                  ),
+                ],
+              ),
+            ),
           ),
-        ),
         const SizedBox(height: 8),
-        for (final esim in esims) ...[
-          _EsimCard(
-            esim: esim,
-            regionImages: regionImages,
-            expiryBadge: expiryBadges[esim.id],
-            onTap: () => onOpen(esim),
-          ),
-          const SizedBox(height: 8),
-        ],
+        if (expanded)
+          for (final esim in esims) ...[
+            _EsimCard(
+              esim: esim,
+              regionImages: regionImages,
+              expiryBadge: expiryBadges[esim.id],
+              onTap: () => onOpen(esim),
+              onLongPress: esimMoveAction(esim) == null
+                  ? null
+                  : () => onLongPress(esim),
+            ),
+            const SizedBox(height: 8),
+          ],
         const SizedBox(height: 8),
       ],
     );
@@ -342,12 +441,14 @@ class _EsimCard extends StatelessWidget {
     required this.regionImages,
     required this.expiryBadge,
     required this.onTap,
+    this.onLongPress,
   });
 
   final OwnedEsim esim;
   final Map<String, String> regionImages;
   final PackageExpiryBadge? expiryBadge;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -382,6 +483,7 @@ class _EsimCard extends StatelessWidget {
         ),
         child: InkWell(
           onTap: onTap,
+          onLongPress: onLongPress,
           borderRadius: BorderRadius.circular(16),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
