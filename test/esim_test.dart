@@ -114,8 +114,15 @@ void main() {
     expect(find.text('Installation Started'), findsOneWidget);
     expect(find.text('ICCID: 8910300000060613949'), findsOneWidget);
     expect(find.text('Note: Japan trip'), findsOneWidget);
-    expect(find.text('Note: '), findsNWidgets(2));
+    expect(find.text('Note: '), findsOneWidget);
+    expect(find.textContaining('Germany'), findsNothing);
     expect(find.text('Expired (0)'), findsNothing);
+
+    await tester.tap(find.text('Archived (1)'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Germany'), findsOneWidget);
+    expect(find.text('Note: '), findsNWidgets(2));
   });
 
   testWidgets('Discover Global shows the catalog image', (tester) async {
@@ -238,9 +245,104 @@ void main() {
     expect(find.text('Archived (1)'), findsOneWidget);
     expect(find.text('Active (1)'), findsNothing);
 
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pump();
+    expect(find.textContaining('Germany'), findsNothing);
+    expect(find.text('Archived (1)'), findsOneWidget);
+
     await tester.enterText(find.byType(TextField), 'missing');
     await tester.pump();
     expect(find.text('No matching eSIMs.'), findsOneWidget);
+  });
+
+  testWidgets('long press moves an expired eSIM into Archived', (tester) async {
+    final esims = [_esim(id: 2, title: 'Serbia', status: 'expired')];
+    final calls = <(int, bool)>[];
+    await _pumpEsims(
+      tester,
+      loader: () async => esims,
+      archive: (id, {required bool archive}) async {
+        calls.add((id, archive));
+        esims[0] = _withArchived(esims[0], '2026-10-12T00:00:00Z');
+      },
+    );
+
+    await tester.longPress(find.byKey(const ValueKey('esim-card-2')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Move to Archived'));
+    await tester.pumpAndSettle();
+
+    expect(calls, [(2, true)]);
+    expect(find.text('Expired (1)'), findsNothing);
+    expect(find.textContaining('Serbia'), findsNothing);
+
+    await tester.tap(find.text('Archived (1)'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Serbia'), findsOneWidget);
+  });
+
+  testWidgets('long press restores an archived active eSIM', (tester) async {
+    final esims = [
+      _esim(
+        id: 3,
+        title: 'Germany',
+        status: 'active',
+        archivedAt: '2026-10-09T00:00:00Z',
+      ),
+    ];
+    final calls = <(int, bool)>[];
+    await _pumpEsims(
+      tester,
+      loader: () async => esims,
+      archive: (id, {required bool archive}) async {
+        calls.add((id, archive));
+        esims[0] = _withArchived(esims[0], null);
+      },
+    );
+
+    await tester.tap(find.text('Archived (1)'));
+    await tester.pumpAndSettle();
+    await tester.longPress(find.byKey(const ValueKey('esim-card-3')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Move to Active'));
+    await tester.pumpAndSettle();
+
+    expect(calls, [(3, false)]);
+    expect(find.text('Active (1)'), findsOneWidget);
+    expect(find.text('Archived (1)'), findsNothing);
+    expect(find.textContaining('Germany'), findsOneWidget);
+  });
+
+  testWidgets('long press restores an archived expired eSIM', (tester) async {
+    final esims = [
+      _esim(
+        id: 4,
+        title: 'Croatia',
+        status: 'expired',
+        archivedAt: '2026-10-09T00:00:00Z',
+      ),
+    ];
+    final calls = <(int, bool)>[];
+    await _pumpEsims(
+      tester,
+      loader: () async => esims,
+      archive: (id, {required bool archive}) async {
+        calls.add((id, archive));
+        esims[0] = _withArchived(esims[0], null);
+      },
+    );
+
+    await tester.tap(find.text('Archived (1)'));
+    await tester.pumpAndSettle();
+    await tester.longPress(find.byKey(const ValueKey('esim-card-4')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Move to Expired'));
+    await tester.pumpAndSettle();
+
+    expect(calls, [(4, false)]);
+    expect(find.text('Expired (1)'), findsOneWidget);
+    expect(find.text('Archived (1)'), findsNothing);
+    expect(find.textContaining('Croatia'), findsOneWidget);
   });
 
   testWidgets('Install eSIM opens the Android setup link', (tester) async {
@@ -412,6 +514,54 @@ AppliedPackage _package({
     paidUsd: null,
     currency: 'USD',
   );
+}
+
+OwnedEsim _withArchived(OwnedEsim esim, String? archivedAt) {
+  return OwnedEsim(
+    id: esim.id,
+    status: esim.status,
+    locationTitle: esim.locationTitle,
+    packageTitle: esim.packageTitle,
+    countryCode: esim.countryCode,
+    dataAllowance: esim.dataAllowance,
+    validityDays: esim.validityDays,
+    usageRemainingMb: esim.usageRemainingMb,
+    usageTotalMb: esim.usageTotalMb,
+    usageIsUnlimited: esim.usageIsUnlimited,
+    usageExpiredAt: esim.usageExpiredAt,
+    issuedAt: esim.issuedAt,
+    createdAt: esim.createdAt,
+    archivedAt: archivedAt,
+    lpa: esim.lpa,
+    matchingId: esim.matchingId,
+    qrcodeUrl: esim.qrcodeUrl,
+    iccid: esim.iccid,
+    note: esim.note,
+  );
+}
+
+Future<void> _pumpEsims(
+  WidgetTester tester, {
+  required Future<List<OwnedEsim>> Function() loader,
+  required Future<void> Function(int esimId, {required bool archive}) archive,
+}) async {
+  SharedPreferences.setMockInitialValues({
+    'roamkit_access_token': 'access',
+    'roamkit_refresh_token': 'refresh',
+    'roamkit_display_name': 'Ante',
+  });
+  await AppSession.instance.restore(refreshBalance: false);
+  await tester.pumpWidget(
+    MaterialApp(
+      home: EsimsScreen(
+        loader: loader,
+        archive: archive,
+        packageLoader: (_) async => [],
+        regionImage: (_) async => null,
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
 }
 
 OwnedEsim _esim({
