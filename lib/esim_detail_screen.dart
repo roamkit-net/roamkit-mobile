@@ -75,11 +75,15 @@ String packageSpecLabel(AppliedPackage package) {
   final days = package.validityDays == 1
       ? '1 day'
       : '${package.validityDays} days';
+  return '${packageDataName(package)} · $days';
+}
+
+String packageDataName(AppliedPackage package) {
   if (package.isUnlimited) {
-    return 'Unlimited · $days';
+    return 'Unlimited';
   }
   final data = package.dataAllowance.trim();
-  return '${data.isEmpty ? '—' : data} · $days';
+  return data.isEmpty ? '—' : data;
 }
 
 class EsimDetailScreen extends StatefulWidget {
@@ -786,14 +790,7 @@ class _PackageRowState extends State<_PackageRow> {
                   ),
                 ),
                 const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    packageSpecLabel(package),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: _muted, fontSize: 13),
-                  ),
-                ),
+                Expanded(child: _PackageName(package: package)),
                 _Badge(label: status, active: package.status == 'active'),
               ],
             ),
@@ -823,6 +820,66 @@ class _PackageRowState extends State<_PackageRow> {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _PackageName extends StatelessWidget {
+  const _PackageName({required this.package});
+
+  final AppliedPackage package;
+
+  @override
+  Widget build(BuildContext context) {
+    final badge = packageExpiryBadge(package);
+    final style = const TextStyle(color: _muted, fontSize: 13);
+    if (badge == null) {
+      return Text(
+        packageSpecLabel(package),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: style,
+      );
+    }
+    return Row(
+      children: [
+        Flexible(
+          child: Text(
+            packageDataName(package),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: style,
+          ),
+        ),
+        Text(' · ', style: style),
+        _ExpiryBadge(badge: badge),
+      ],
+    );
+  }
+}
+
+class _ExpiryBadge extends StatelessWidget {
+  const _ExpiryBadge({required this.badge});
+
+  final PackageExpiryBadge badge;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = badge.urgent ? _errorColor : _successColor;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: badge.urgent ? const Color(0xFFFDECEC) : const Color(0xFFE5F6EC),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        badge.label,
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }

@@ -36,6 +36,65 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  test('active package badge rounds remaining days up', () {
+    final now = DateTime.utc(2026, 10, 12, 4, 30);
+
+    final month = packageExpiryBadge(
+      _package(
+        status: 'active',
+        dataAllowance: '300 MB',
+        expiresAt: '2026-11-13T17:59:00Z',
+      ),
+      now: now,
+    );
+    expect(month?.label, '33 days');
+    expect(month?.urgent, isFalse);
+
+    final three = packageExpiryBadge(
+      _package(
+        status: 'active',
+        dataAllowance: '300 MB',
+        expiresAt: '2026-10-14T17:59:00Z',
+      ),
+      now: now,
+    );
+    expect(three?.label, '3 days');
+    expect(three?.urgent, isTrue);
+
+    final one = packageExpiryBadge(
+      _package(
+        status: 'active',
+        dataAllowance: '300 MB',
+        expiresAt: '2026-10-12T20:00:00Z',
+      ),
+      now: now,
+    );
+    expect(one?.label, '1 day');
+    expect(one?.urgent, isTrue);
+
+    expect(
+      packageExpiryBadge(
+        _package(status: 'not_active', expiresAt: '2026-11-13T17:59:00Z'),
+        now: now,
+      ),
+      isNull,
+    );
+    expect(
+      packageExpiryBadge(
+        _package(status: 'expired', expiresAt: '2026-11-13T17:59:00Z'),
+        now: now,
+      ),
+      isNull,
+    );
+    expect(
+      packageExpiryBadge(
+        _package(status: 'active', expiresAt: '2026-10-12T04:30:00Z'),
+        now: now,
+      ),
+      isNull,
+    );
+  });
+
   testWidgets('purchased keeps install and hides empty packages', (
     tester,
   ) async {
@@ -49,6 +108,27 @@ void main() {
     expect(find.text('1 GB Top-up'), findsOneWidget);
     expect(find.text('Renew'), findsOneWidget);
     expect(find.text('Notes'), findsOneWidget);
+  });
+
+  testWidgets('active package shows the remaining-days badge', (tester) async {
+    final expires = DateTime.now().toUtc().add(const Duration(hours: 60));
+    await pumpDetail(
+      tester,
+      _esim(status: 'in_use'),
+      packages: [
+        _package(
+          status: 'active',
+          dataAllowance: '300 MB',
+          isUnlimited: false,
+          validityDays: 7,
+          expiresAt: expires.toIso8601String(),
+        ),
+      ],
+    );
+
+    expect(find.text('300 MB'), findsOneWidget);
+    expect(find.text('3 days'), findsOneWidget);
+    expect(find.text('300 MB · 7 days'), findsNothing);
   });
 
   testWidgets('in use shows packages with the data bar and no install', (
@@ -115,6 +195,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: EsimsScreen(
+          packageLoader: (_) async => [],
           loader: () async => [
             _esim(id: 4, status: 'in_use', remainingMb: 395, totalMb: 500),
             _esim(id: 35, status: 'expired', remainingMb: 0, totalMb: 500),
@@ -236,17 +317,23 @@ EsimDetailApi _api({
   );
 }
 
-AppliedPackage _package({required String status}) {
+AppliedPackage _package({
+  required String status,
+  String dataAllowance = '',
+  String? expiresAt = '2026-09-16T19:34:00Z',
+  bool isUnlimited = true,
+  int validityDays = 3,
+}) {
   return AppliedPackage(
     id: 'pkg-$status',
     kind: 'esim',
     status: status,
-    dataAllowance: '',
-    validityDays: 3,
-    isUnlimited: true,
+    dataAllowance: dataAllowance,
+    validityDays: validityDays,
+    isUnlimited: isUnlimited,
     createdAt: '2026-09-13T19:29:00Z',
     activatedAt: '2026-09-13T19:34:00Z',
-    expiresAt: '2026-09-16T19:34:00Z',
+    expiresAt: expiresAt,
     paidUsd: '3.30',
     currency: 'USD',
   );

@@ -501,6 +501,17 @@ String packageDataLabel(CatalogPackage package) {
   return package.dataAllowance;
 }
 
+Future<String?> fetchLocationImage(String slug) async {
+  final body = await _getString(
+    Uri.parse('$catalogApiBase/api/v1/locations/${Uri.encodeComponent(slug)}/'),
+  );
+  final json = jsonDecode(body);
+  if (json is! Map<String, dynamic>) {
+    return null;
+  }
+  return CatalogLocation.fromJson(json).imageSrc;
+}
+
 Future<LocationDetailData> fetchLocationDetail(String slug) async {
   final locationBody = await _getString(
     Uri.parse('$catalogApiBase/api/v1/locations/${Uri.encodeComponent(slug)}/'),

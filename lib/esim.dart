@@ -94,6 +94,25 @@ class OwnedEsim {
   }
 }
 
+/// Catalog slug for a regional card that has no country flag.
+String? regionIconSlug(String destination) {
+  final key = destination.trim().toLowerCase();
+  if (key == 'europe') {
+    return 'europe';
+  }
+  const global = {
+    'global',
+    'discover global',
+    'world',
+    'discover',
+    'discover-global',
+  };
+  if (global.contains(key)) {
+    return 'global';
+  }
+  return null;
+}
+
 enum EsimStage { purchased, inUse, expired }
 
 /// Which detail layout an eSIM gets. Anything not yet in use still installs.
